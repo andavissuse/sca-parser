@@ -114,8 +114,8 @@ if [ $numToolFiles = 1 ]; then
                 	fi
                 	if [ "$actionDeps" = "*" ]; then
                         	[ $DEBUG ] && echo "***  DEBUG: $0: taking action $actionName (no dependency on result)" >&2
-                        	mkdir -p "${actionsVarPath}/${actionName}" 2>/dev/null
-                        	touch "${actionsVarPath}/${actionName}/test.$ts"
+                        	mkdir -p "${parserVarPath}/${actionName}" 2>/dev/null
+                        	touch "${parserVarPath}/${actionName}/test.$ts"
                         	actionsTaken="$actionsTaken $actionName"
                         	continue
                 	fi
@@ -127,16 +127,17 @@ if [ $numToolFiles = 1 ]; then
                         	[ $DEBUG ] && echo "*** DEBUG: $0: categoryResult: $categoryResult" >&2
                         	if echo "$actionDeps" | grep -qE "^$categoryResult|,$categoryResult"; then
                                 	[ $DEBUG ] && echo "*** DEBUG: $0: taking action $actionName based on category result" >&2
-                                	mkdir -p "$parserVarPath}/${actionName}" 2>/dev/null
+                                	mkdir -p "${parserVarPath}/${actionName}" 2>/dev/null
                                 	touch "${parserVarPath}/${actionName}/test.$ts"
-                                	actionsTaken="$actionsTaken $actionName"
+                                	actionsTaken=`echo "$actionsTaken $actionName" | sed "s/^ //"`
                                 	break
                         	fi
                 	done
         	done
 	done
-	echo "actionsTaken: $actionsTaken" >> $outFile
+	echo "actionsTaken: $actionsTaken" >> $toolResultsFile
 else
+	[ $DEBUG ] && echo "*** DEBUG: $0: multiple tool result files"
 	# what to do when taksi calls the parser?
 fi
 
