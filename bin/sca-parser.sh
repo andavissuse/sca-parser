@@ -1,14 +1,14 @@
 #!/bin/sh
 
 #
-# This script parses results from one or more sca tool result files. If only one tool
-# results file is provided, the parser takes the actions as defined in the tool result
-# file.  If multiple tool results files are provided, the parser takes actions as defined
-# in the parser config file.
+# This script parses results from one or more sca tool result files and takes actions
+# based on settings in the tool's configuration file and sca-parser.conf.
 #
 # Inputs: SCA tool results file(s)
 #
-# Outputs/Results: Actions as described in tool and/or parser config files
+# Results/Outputs: Actions as described in tool and/or parser config files
+#		   Record of actions taken written to {caller}.parser.ts file
+#		   (or file specified with -o option}
 #
 
 #
@@ -18,6 +18,7 @@ function usage() {
 	echo "Usage: `basename $0` [options] <sca-tool-results-file>"
 	echo "Options:"
 	echo "    -d        debug"
+	echo "	  -c	    tool config file"
 	echo "    -o	    output file"
 }
 
@@ -35,7 +36,7 @@ if [ "$1" = "--help" ]; then
 	usage
 	exit 0
 fi
-while getopts 'hdo:' OPTION; do
+while getopts 'hdc:o:' OPTION; do
         case $OPTION in
                 h)
                         usage
@@ -45,6 +46,12 @@ while getopts 'hdo:' OPTION; do
                         DEBUG=1
 			debugOpt="-d"
                         ;;
+		c)
+			toolConfFile="${OPTARG}"
+			if [ ! -r "${toolConfFile}" ]; then
+				exitError "Tool configuration file ${toolConfFile} does not exist, exiting..."
+			fi
+			;;
 		o)
 			outFile="${OPTARG}"
 			if [ -f "${outFile}" ]; then
@@ -70,6 +77,7 @@ else
 	done
 fi
 [ $DEBUG ] && echo "*** DEBUG: $0: toolResultsFiles: $toolResultsFiles" >&2
+[ $DEBUG ] && echo "*** DEBUG: $0: toolConfFile: $toolConfFile" >&2
 
 curPath=`dirname "$(realpath "$0")"`
 #parentPid=$PPID
@@ -98,11 +106,32 @@ ts=`date +%s`
 numToolFiles=`echo $toolResultsFiles | wc -w`
 if [ $numToolFiles = 1 ]; then
 	[ $DEBUG ] && echo "*** DEBUG: $0: toolResultsFile: $toolResultsFile" >&2
-	prioGroups=`grep -E "p?-categories:" $toolResultsFile | cut -d':' -f1 | rev | cut -d'-' -f2 | rev | tr '\n' ' '`
+	if [ -z "$outFile" ]; then
+		toolResultsFileDir=`dirname $toolResultsFile`
+		toolResultsFileBase=`basename $toolResultsFile`
+		outFile="${toolResultsFileDir}/${toolResultsFileBase}.parser.${ts}"
+	fi
+	[ $DEBUG ] && echo "*** DEBUG: $0: outFile: $outFile" >&2
+	prioGroups=""
+#	grep -i -E "p[0-9]_categories=" $toolConfFile | while read -r prioGroupLine; do
+	while IFS= read -r prioGroupLine; do
+		[ $DEBUG ] && echo "*** DEBUG: $0: prioGroupLine: $prioGroupLine" >&2
+		prioGroup=`echo $prioGroupLine | grep -i -o -E "p[0-9]" | tr '[:upper:]' '[:lower:]'`
+		[ $DEBUG ] && echo "*** DEBUG: $0: prioGroup: $prioGroup" >&2
+		prioGroups="$prioGroups $prioGroup"
+		[ $DEBUG ] && echo "*** DEBUG: $0: prioGroups: $prioGroups" >&2
+		prioCategories=`echo $prioGroupLine | cut -d"=" -f2`
+		[ $DEBUG ] && echo "*** DEBUG: $0: prioCategories: $prioCategories" >&2
+		prioActions=`grep -i -E "${prioGroup}_actions" $toolConfFile | cut -d"=" -f2`
+		[ $DEBUG ] && echo "*** DEBUG: $0: prioActions: $prioActions" >&2
+		echo "${prioGroup}-categories: $prioCategories" >> $outFile
+		echo "${prioGroup}-actions: $prioActions" >> $outFile
+	done < <(grep -i -E "p[0-9]_categories=" $toolConfFile)
+	prioGroups=`echo $prioGroups | sed "s/^ *//" | sed "s/ *$//"`
 	[ $DEBUG ] && echo "*** DEBUG: $0: prioGroups: $prioGroups" >&2
 	for prioGroup in $prioGroups; do
         	[ $DEBUG ] && echo "*** DEBUG: $0: prioGroup: $prioGroup" >&2
-        	actions=`grep "${prioGroup}-actions:" $toolResultsFile | cut -d":" -f1 --complement`
+        	actions=`grep -i -E "${prioGroup}-actions:" $toolResultsFile | cut -d":" -f1 --complement`
         	[ $DEBUG ] && echo "*** DEBUG: $0: actions: $actions" >&2
         	for action in $actions; do
                 	actionName=`echo $action | cut -d':' -f1`
@@ -135,9 +164,9 @@ if [ $numToolFiles = 1 ]; then
                 	done
         	done
 	done
-	echo "actionsTaken: $actionsTaken" >> $toolResultsFile
+	echo "actionsTaken: $actionsTaken" >> $outFil"actionsTaken: $actionsTaken" >> $outFile
 else
-	[ $DEBUG ] && echo "*** DEBUG: $0: multiple tool result files"
+	[ $DEBUG ] && echo "*** DEBUG: $0: multiple tool results files"
 	# what to do when taksi calls the parser?
 fi
 
