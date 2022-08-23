@@ -7,7 +7,7 @@
 # Inputs: SCA tool results file(s)
 #
 # Results/Outputs: Actions as described in tool and/or parser config files
-#		   Record of actions taken written to {caller}.parser.ts file
+#		   Record of actions taken written to <caller>.parser.<timestamp> file
 #		   (or file specified with -o option}
 #
 
@@ -17,9 +17,9 @@
 function usage() {
 	echo "Usage: `basename $0` [options] <sca-tool-results-file>"
 	echo "Options:"
-	echo "    -d        debug"
-	echo "	  -c	    tool config file"
-	echo "    -o	    output file"
+	echo "    -d	debug"
+	echo "    -c	tool config file"
+	echo "    -o	output file"
 }
 
 function exitError() {
