@@ -73,7 +73,7 @@ caller=`ps -o comm= $PPID`
 ts=`date +%s`
 
 # parser conf file 
-parserConfFiles="/usr/etc/sca-parser.conf /etc/sca-parser.conf ${curPath}/../sca-parser.conf"
+parserConfFiles="${curPath}/../sca-parser.conf /etc/opt/sca/sca-parser.conf"
 for parserConfFile in ${parserConfFiles}; do
 	if [ -r "${parserConfFile}" ]; then
 		found="true"
@@ -102,7 +102,7 @@ if [ $numToolFiles = 1 ]; then
 	fi
 	[ $DEBUG ] && echo "*** DEBUG: $0: outFile: $outFile" >&2
 	# get priority info from tool conf file (fallback is to use priorities in tool results file)
-	toolConfFiles="${curPath}/../${tool}.conf /usr/etc/sca/${tool}.conf /etc/${tool}.conf"
+	toolConfFiles="${curPath}/../${tool}.conf /etc/opt/sca/${tool}.conf"
 	found="false"
 	for toolConfFile in `tac -s ' ' <<< ${toolConfFiles}`; do
 		if [ -r "${toolConfFile}" ]; then
