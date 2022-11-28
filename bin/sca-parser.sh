@@ -2,13 +2,15 @@
 
 #
 # This script parses results from one or more sca tool result files and takes actions
-# based on settings in the tool's configuration file and sca-parser.conf.
+# based on settings in configuration files.  If no tool-specific config files are
+# found, sca-parser uses the original action info that was written into the tool's
+# name:value output file.
 #
-# Inputs: SCA tool results file(s)
+# Inputs: Tool results file(s)
 #
-# Results/Outputs: Actions as described in tool and/or parser config files
+# Results/Outputs: Actions as listed in config files (or tool name:value output file)
 #		   Record of actions taken written to <caller>.parser.<timestamp> file
-#		   (or file specified with -o option}
+#		       or other output file specified with -o option
 #
 
 #
@@ -17,8 +19,9 @@
 function usage() {
 	echo "Usage: `basename $0` [options] <sca-tool-results-file>"
 	echo "Options:"
+	echo "    -c	caller (needed to maintain single output file during recursion)"
 	echo "    -d	debug"
-	echo "    -o	output file"
+	echo "    -o	output file (default is ${caller}.parser.{timestamp}"
 }
 
 function exitError() {
@@ -45,6 +48,9 @@ while getopts 'hdc:o:' OPTION; do
                         DEBUG=1
 			debugOpt="-d"
                         ;;
+		c)
+			caller="${OPTARG}"
+			;;
 		o)
 			outFile="${OPTARG}"
 			if [ ! -d `dirname "${outFile}"` ]; then
@@ -69,24 +75,34 @@ fi
 [ $DEBUG ] && echo "*** DEBUG: $0: toolResultsFiles: $toolResultsFiles" >&2
 
 curPath=`dirname "$(realpath "$0")"`
-caller=`ps -o comm= $PPID`
+if [ -z "$caller" ]; then
+	caller=`ps -o comm= $PPID`
+fi
+[ $DEBUG ] && echo "*** DEBUG: $0: caller: $caller" >&2
 ts=`date +%s`
 
 # parser conf file 
 parserConfFiles="${curPath}/../sca-parser.conf /etc/opt/sca/sca-parser.conf"
+found="false"
 for parserConfFile in ${parserConfFiles}; do
 	if [ -r "${parserConfFile}" ]; then
 		found="true"
-		. ${parserConfFile}
+		source ${parserConfFile}
+		break
 	fi
 done
-if [ ! "${found}" ]; then
+if [ "$found" = "false" ]; then
 	exitError "No parser conf file info; exiting..."
 fi
 [ $DEBUG ] && echo "*** DEBUG: $0: parserConfFile: ${parserConfFile}" >&2
 parserVarPath="$SCA_PARSER_VAR_PATH"
 parserTmpPath="$SCA_PARSER_TMP_PATH"
-[ $DEBUG ] && echo "*** DEBUG: $0: parserVarPath: $parserVarPath" >&2
+[ $DEBUG ] && echo "*** DEBUG: $0: parserVarPath: $parserVarPath, parserTmpPath: $parserTmpPath" >&2
+
+if [ -z "$outFile" ]; then
+        outFile="${parserTmpPath}/${toolResultsFileDir}/${caller}.parser.${ts}"
+fi
+[ $DEBUG ] && echo "*** DEBUG: $0: outFile: $outFile" >&2
 
 # Main code
 actionsTaken=""
@@ -104,9 +120,10 @@ if [ $numToolFiles = 1 ]; then
 	# get priority info from tool conf file (fallback is to use priorities in tool results file)
 	toolConfFiles="${curPath}/../${tool}.conf /etc/opt/sca/${tool}.conf"
 	found="false"
-	for toolConfFile in `tac -s ' ' <<< ${toolConfFiles}`; do
+	for toolConfFile in ${toolConfFiles}; do
 		if [ -r "${toolConfFile}" ]; then
 			found="true"
+			source $toolConfFile
 			break
 		fi
 	done
@@ -115,6 +132,9 @@ if [ $numToolFiles = 1 ]; then
 		toolConfFile="$toolResultsFile"
 	fi
 	[ $DEBUG ] && echo "*** DEBUG: $0: toolConfFile: $toolConfFile" >&2
+	echo "tool: $tool" >> $outFile
+	echo "toolResultsFile: $toolResultsFile" >> $outFile
+	echo "toolConfFile: $toolConfFile" >> $outFile
 	prioGroups=""
 	while IFS= read -r prioGroupCatLine; do
 		[ $DEBUG ] && echo "*** DEBUG: $0: prioGroupCatLine: $prioGroupCatLine" >&2
@@ -162,7 +182,7 @@ if [ $numToolFiles = 1 ]; then
 						actionsTaken="$actionsTaken ${actionName}(${category})"
 					elif [ "$actionName" = "forward" ]; then
 						if ! echo $actionsTaken | grep "forward"; then
-							touch ${parserVarPath}/${caller}/forward.$ts
+							touch ${parserVarPath}/${caller}.forward.$ts
 						fi
 						category=`echo $category | sed "s/\"//g"`
 						actionsTaken="$actionsTaken ${actionName}(${category})"
@@ -176,8 +196,8 @@ if [ $numToolFiles = 1 ]; then
 					for actionDep in `echo $actionDeps | tr ',' ' '`; do
 						[ $DEBUG ] && echo "*** DEBUG: $0: actionDep: $actionDep" >&2
 						if [ "$actionDep" = "$categoryResult" ]; then
-                                			[ $DEBUG ] && echo "*** DEBUG: $0: taking action $actionName based on category result" >&2
-							if [ "$actionName" = "notify" ] && echo $actionsTaken grep -q "$actionsTaken" ; then
+                                			[ $DEBUG ] && echo "*** DEBUG: $0: Taking action $actionName based on category result" >&2
+							if [ "$actionName" = "notify" ]; then
 								echo "TO: $notifyAddrs" >> ${parserVarPath}/${caller}.notify.$ts.$i
 								echo "SUBJECT: $caller Notification" >> ${parserVarPath}/${caller}.notify.$ts.$i
 								grep "${category}-result:" $toolResultsFile >> ${parserVarPath}/${caller}.notify.$ts.$i
@@ -201,9 +221,9 @@ else
 	[ $DEBUG ] && echo "*** DEBUG: $0: toolPrio: $toolPrio" >&2
 	for tool in $toolPrio; do
 		for toolResultsFile in $toolResultsFiles; do
-			if grep -q -E "^${tool}-version:" $toolResultsFile; then 
-				[ $DEBUG ] && ${SCA_PARSER_BIN_PATH}/sca-parser.sh "$debugOpt" $toolResultsFile ||
-				${SCA_PARSER_BIN_PATH}/sca-parser.sh $toolResultsFile
+			if grep -q -i -E "^${tool}-version:" $toolResultsFile; then 
+				[ $DEBUG ] && ${SCA_PARSER_BIN_PATH}/sca-parser.sh "$debugOpt" -o $outFile $toolResultsFile ||
+				${SCA_PARSER_BIN_PATH}/sca-parser.sh -c $caller -o $outFile $toolResultsFile
 			fi	
 		done
 	done
